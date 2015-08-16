@@ -1,0 +1,325 @@
+#!/bin/bash
+#	stats.sh
+# This shell script gives the average and median values of each row of
+# scores given as input to the program. This script can also be used to
+# calculate the average and median values of each column of the given input.
+# Input can be given as an input file or as standard input where the user
+# enters values to be calculated over manually. The format of the input
+# files must be as follows:
+#
+#    a1 a2 a3 a4 ... an
+#    b1 b2 b3 b4 ... bn
+#    c1 c2 c3 c4 ... cn
+#    .    .           .
+#    .        .       .
+#    .            .   .
+#    m1 m2 m3 m4 ... mn
+#
+# where all of the above characters [a1, mn] represent integers [0, 9].
+# There must be an equal number of values contained in each row. Each 
+# value must be separated by whitespace.
+#
+# The script is run with the following syntax:
+#
+#    stats {-rows|-cols} [input_file]
+#
+# If the input_file is not given, standard input is the default method
+# of input entry, input terminated by entering 0 <Enter>.
+
+
+# If the rows variable is set to 0 then the user selected to get the 
+# average for rows, 1 for columns
+rows=-1
+
+# This is the variable storing the current directory
+tmpDir=`dirname $0`
+
+# This variable will serve as the basis for all temporary files
+tmpFile="$tmpDir/tmpFile_"
+
+# All temporary files have the form "tmpFile_PID", where PID is the
+# process ID
+tmpFile=$tmpFile$$
+
+# The program exits with a zero if a terminate, hang up, or interrupt occurs
+trap "exit 1" INT HUP TERM
+
+# This deletes the temporary file when the program exits
+trap "rm $tmpFile" EXIT
+
+# This clears/creates the current temporary file
+> $tmpFile
+
+# If two arguments are given, then the following occurs, where the first
+# argument is the -row or -col option and the second argument is the file
+# containing the table of values
+if [[ "$#" -eq 2 ]]; then
+
+	# This variable contains an "r" if rows is given as the option, "c" if 
+	# columns is given as the option
+	rowSelector="$(echo $1 | head -c 2 | tail -c -1 )"
+
+	# Set the "rows" variable to the appropriate value to be used later
+	if [ "$rowSelector" = "r" ]; then
+		rows=0
+	elif [ "$rowSelector" = "c" ]; then
+		rows=1
+	else
+
+	# If an option is given not of the form "-r..."	or "-c..." then an
+	# error is given to standard error output and the program exits
+		echo "You must select rows or columns using the correct syntax! Use \"./stats {-rows|-cols} [input_file]\"" >&2
+		exit 1
+	fi
+
+	# If the file is not readable for the file provided as the second
+	# argument, output an error message and exit the program
+	if ! [[ -r "$2" ]]; then
+		echo "Cannot read $2" >&2
+		exit 1
+	fi
+
+# If one argument is given, then the following occurs, where th only
+# argument is the -row or -col option
+# If only one argument is given, then the data to calculate over is
+# given by standard input rather than file input
+elif [[ "$#" -eq 1 ]]; then
+
+	# This is the same as the above where "-r..." or "-c..." is the
+	# rows or columns option
+	rowSelector="$(echo $1 | head -c 2 | tail -c -1 )"
+
+	# Set the "rows" variable to the appropriate value to be used later
+	if [ "$rowSelector" = "r" ]; then
+		rows=0
+	elif [ "$rowSelector" = "c" ]; then
+		rows=1
+	
+	# If an option is given not of the form "-r..."	or "-c..." then an
+	# error is given to standard error output and the program exits
+	else
+		echo "You must select rows or columns using the correct syntax! Use \"./stats {-rows|-cols} [input_file]\"" >&2
+		exit 1
+	fi
+
+# The arguments provided were not in the correct format
+# An error is given and the program exits
+else
+	echo "You must select either rows or columns! Use \"./stats {-rows|-cols} [input_file]\"" >&2
+	exit 1
+fi
+
+
+# All calculations are done by reading in each row of the temporary
+# file and calculating the average and median of that row.
+#
+# If rows are selected as the option, then we will read in each row 
+# and put it in the temporary file. If columns are selected, we will 
+# parse each column and build rows out of them to be added to the 
+# temporary file.
+#
+# We can then do the same calculation for the rows and columns from
+# the temporary file and output the calculated answers in the 
+# corresponding formats.
+
+
+
+# If "rows" were selected as the option
+if [[ "$rows" -eq "0" ]]; then
+	
+	# If a file was provided then read in each row and output it to
+	# the temporary file
+	if [[ "$#" -eq 2 ]]; then
+		while read myLine
+		do
+			echo $myLine >> $tmpFile
+		done <$2
+
+	# If a file was not provided, read in values from standard input
+	# and put each row into the temporary file
+	else
+		while read myLine
+		do
+
+			# If a 0 is provided, stop accepting input
+			if [[ "$myLine" = "0" ]]; then
+				break
+			fi
+			echo $myLine >> $tmpFile
+		done
+	fi
+
+# If "columns" were selected as the option
+elif [[ "$rows" -eq "1" ]]; then
+
+	# Use an array to store the values of each column and add the
+	# columns as rows to the temporary file
+	declare -a NEWROWS
+
+	# Use count to track the current column number as we iterate through
+	# the rows
+	count=1
+
+	# If a file was provided then read in from the file row by row
+	if [[ "$#" -eq 2 ]]; then
+		while read myLine
+		do
+			count=1
+
+			# Get the number of columns
+			numberCols=$(echo "$myLine" | wc -w)
+
+			# Iterate through each row and add each value with whitespace
+			# to the array
+			# This is how the program transposes the columns into rows
+			for (( i=0; i<$numberCols; i++ )); do
+				NEWROWS[$i]+=$(echo "$myLine" | awk "{print $"$count";}")
+				NEWROWS[$i]+=$(echo -e "\t")
+				count=`expr $count + 1`
+			done	
+		done <$2
+
+	# If a file was not provided then read in from standard input
+	else
+		while read myLine
+		do
+
+			# If a 0 is provided, stop accepting input
+			if [[ "$myLine" = "0" ]]; then
+				break
+			fi
+			count=1
+
+			# Get the number of columns
+			numberCols=$(echo "$myLine" | wc -w)
+
+			# Iterate through each row and add each value with whitespace
+			# to the array
+			# This is how the program transposes the columns into rows			
+			for (( i=0; i<$numberCols; i++ )); do
+				NEWROWS[$i]+=$(echo "$myLine" | awk "{print $"$count";}")
+				NEWROWS[$i]+=$(echo -e "\t")
+				count=`expr $count + 1`
+			done	
+		done
+	fi
+
+	# If there are any columns to be processed
+	if [[ "$numberCols" -ne "0" ]]; then
+
+		# Each index of the array contains the columns of the inputed values
+		# Output each index of the array as a row into the temporary file
+		for (( i=0; i<$numberCols; i++ )); do
+			echo ${NEWROWS[$i]} >> $tmpFile
+		done	
+	fi
+
+# For continuity I put this error statement here is no row or column selection
+# was made, though this will not make it to standard error output as we would
+# catch this earlier
+else
+	echo "No selection made"
+	exit 1
+fi
+
+# Now regardless of what option the user selected, we will calculate the average and median
+# over the rows of the temporary file located in this directory. We will then check a final time 
+# to see the user's selection and output the data accordingly.
+
+# Number of items in the row to calculate the average
+numItems=0
+
+# Count is used to set the appropriate index in the answer arrays below
+count=0
+
+# These arrays store the averages and medians of the rows
+declare -a MEANANSWERS
+declare -a MEDANSWERS
+
+# Read in each row from the temporary file
+while read toCalc
+do
+
+	# This sum will store the total of the row
+	lineSum=0
+
+	# This is the number of items in the row
+	numItems=$(echo "$toCalc" | wc -w)
+
+	# Iterate through the row and add each value to the "lineSum" variable
+	for (( i=1; i<=$numItems; i++ )); do
+		tmpVar=$(echo "$toCalc" | awk "{print $"$i";}")
+		lineSum=$(echo $(( lineSum + tmpVar )))
+	done
+
+	# This stores the index of the median value within the sorted row
+	medianIdx=`expr $numItems / 2`
+
+	# Add one to ensure that the larger of two values is chosen if the number
+	# of items in a row is even
+	# This also ensures that the middle value is chosen if the number of
+	# items in a row is odd
+	medianIdx=`expr $medianIdx + 1`
+
+	# This average is temporary because we may need to round the value up
+	# This value contains the floor of the floating-point mean
+	tmpMean=`expr $lineSum / $numItems`
+
+	# Take the remainder of dividing the sum by the number of items in the row
+	# If twice that value is greater than or equal to the number items, that
+	# means that the floating-point mean has a decimal value of 0.5 or greater
+	roundUpTest=`expr $lineSum % $numItems`
+	roundUpTest=`expr $roundUpTest \* 2`
+
+	# As above, if the "roundUpTest" variable is greater than or equal to
+	# the number of items in the row, add one value to the "tmpMean" variable
+	if [[ "$roundUpTest" -ge "$numItems" ]]; then
+
+		# Add the average, rounded up, to the answer array at the index corresponding
+		# to the row number
+		MEANANSWERS[$count]=`expr $tmpMean + 1`
+	else
+		# Add the average, rounded down, to the answer array at the index corresponding
+		# to the row number
+		MEANANSWERS[$count]=`expr $lineSum / $numItems`
+	fi
+
+	# This operation stores the median value in the median answer array at the index
+	# corresponding to the row number
+	#
+	# First, break each row into its own rows at any whitespace
+	# Sort those rows
+	# Take all of the values up to the index of the median value calculated earlier
+	# Take the final value in this sequence
+	# This value is the median
+	MEDANSWERS[$count]=$(echo "$toCalc" | tr " " "\n" | sort -g | head -$medianIdx | tail -1)
+
+	# Again, this variable stores our current index of the answer arrays, corresponding 
+	# to the row number we are currently processing
+	count=`expr $count + 1`
+
+done <$tmpFile
+
+# This prints the answers, formatted for whether we calculated for rows or for columns
+# If rows were selected, print the answer arrays as two columns, one for averages, one
+# for medians
+if [[ "$rows" -eq "0" ]]; then
+	echo -e "Average\tMedian"
+	for (( i=0; i<$count; i++ )); do
+		printf "%d\t%d\n" "${MEANANSWERS[$i]}" "${MEDANSWERS[$i]}"
+	done
+
+# If columns were selected, print the answer arrays as two rows, one for averages, one
+# for columns
+elif [[ "$rows" -eq "1" ]]; then
+	printf "Average:\n"
+	for (( i=0; i<$count; i++ )); do
+		printf "%d\t" "${MEANANSWERS[$i]}"
+	done
+	printf "\n"
+	printf "Median:\n"
+	for (( i=0; i<$count; i++ )); do
+		printf "%d\t" "${MEDANSWERS[$i]}"
+	done
+	printf "\n"
+fi
